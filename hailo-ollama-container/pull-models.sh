@@ -77,21 +77,86 @@ fail_count=0
 
 for i in "${!models_to_pull[@]}"; do
     model="${models_to_pull[$i]}"
-    echo "Pulling model [$((i+1))/${#models_to_pull[@]}]: '$model'"
+    echo "Checking model [$((i+1))/${#models_to_pull[@]}]: '$model'"
     
-    # Capture the response and check it
-    response=$(curl --silent http://localhost:8000/api/pull \
-         -H 'Content-Type: application/json' \
-         -d "{ \"model\": \"$model\", \"stream\": true }")
+    # Check if model is already downloaded by trying to get its info
+    model_info=$(curl --silent --connect-timeout 5 --max-time 10 http://localhost:8000/api/show \
+                 -H 'Content-Type: application/json' \
+                 -d "{ \"name\": \"$model\" }" 2>/dev/null)
     
-    # Check if the response contains success status
-    if echo "$response" | grep -q '"status":"success"'; then
-        echo "✓ Successfully initiated pull for '$model'"
+    # If we get model info back, it's already downloaded
+    if echo "$model_info" | grep -q '"license"' || echo "$model_info" | grep -q '"parameters"' || echo "$model_info" | grep -q '"details"'; then
+        echo "ℹ️  Model '$model' is already downloaded"
         ((success_count++))
+        echo ""
+        continue
+    fi
+    
+    echo "Downloading model '$model'..."
+    
+    # Stream the response and show progress in real-time
+    echo "Starting pull for '$model'..."
+    echo "Progress (press Ctrl+C to cancel):"
+    
+    # Create a temporary file to capture the final status
+    temp_file=$(mktemp)
+    
+    # Use curl without capturing to show streaming output directly
+    curl --connect-timeout 10 --max-time 300 http://localhost:8000/api/pull \
+         -H 'Content-Type: application/json' \
+         -d "{ \"model\": \"$model\", \"stream\": true }" \
+         2>/dev/null | while IFS= read -r line; do
+        
+        # Parse and display progress
+        if echo "$line" | grep -q '"status":"pulling"'; then
+            # Extract progress info using basic text processing
+            completed=$(echo "$line" | grep -o '"completed":[0-9]*' | cut -d: -f2)
+            total=$(echo "$line" | grep -o '"total":[0-9]*' | cut -d: -f2)
+            
+            if [[ -n "$completed" && -n "$total" && "$total" -gt 0 ]]; then
+                percent=$((completed * 100 / total))
+                mb_completed=$((completed / 1024 / 1024))
+                mb_total=$((total / 1024 / 1024))
+                printf "\r  Progress: %d%% (%d MB / %d MB)" "$percent" "$mb_completed" "$mb_total"
+            fi
+        elif echo "$line" | grep -q '"status":"success"'; then
+            echo ""
+            echo "✓ Successfully completed pull for '$model'"
+            echo "success" > "$temp_file"
+            break
+        elif echo "$line" | grep -q '"status":"error"'; then
+            echo ""
+            echo "✗ Error pulling '$model': $line"
+            echo "error" > "$temp_file"
+            break
+        fi
+    done
+    
+    # Get curl exit code
+    curl_exit_code=${PIPESTATUS[0]}
+    
+    # Read the status from temp file
+    if [ -f "$temp_file" ]; then
+        final_status=$(cat "$temp_file")
+        rm "$temp_file"
     else
-        echo "✗ Failed to pull '$model'"
-        echo "Response: $response"
+        final_status=""
+    fi
+    
+    # Count results based on actual status
+    if [ "$final_status" = "success" ]; then
+        ((success_count++))
+    elif [ "$final_status" = "error" ]; then
         ((fail_count++))
+    elif [ $curl_exit_code -ne 0 ]; then
+        echo ""
+        echo "✗ Connection failed for '$model' (curl exit code: $curl_exit_code)"
+        ((fail_count++))
+    else
+        # Stream ended without explicit success/error status
+        echo ""
+        echo "? Pull for '$model' completed but status unclear"
+        ((success_count++))  # Assume success if no explicit error
     fi
     
     echo ""
