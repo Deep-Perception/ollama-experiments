@@ -66,11 +66,7 @@ EXPOSE 8000
 RUN if [ -f /usr/bin/hailo-ollama ]; then chmod +x /usr/bin/hailo-ollama; else echo "hailo-ollama not found at /usr/bin/hailo-ollama"; fi
 
 # Switch to non-root user (optional)
-# USER hailo
+USER hailo
 
 # Set the default command - use bash for debugging if hailo-ollama not found
 CMD ["/bin/bash", "-c", "if [ -f /usr/bin/hailo-ollama ]; then echo 'Starting hailo-ollama...' && /usr/bin/hailo-ollama; else echo 'hailo-ollama not found! Available hailo binaries:' && find /usr -name '*hailo*' -type f 2>/dev/null && echo 'Keeping container alive for debugging...' && tail -f /dev/null; fi"]
-
-# Health check (optional)
-# HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-#   CMD curl -f http://localhost:8000/api/health || exit 1
