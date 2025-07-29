@@ -63,14 +63,18 @@ for i in "${!models[@]}"; do
     model="${models[$i]}"
     echo "Pulling model [$((i+1))/${#models[@]}]: '$model'"
     
-    # Use a subshell to capture output and check success
-    if curl --silent http://localhost:8000/api/pull \
+    # Capture the response and check it
+    response=$(curl --silent http://localhost:8000/api/pull \
          -H 'Content-Type: application/json' \
-         -d "{ \"model\": \"$model\", \"stream\": true }"; then
+         -d "{ \"model\": \"$model\", \"stream\": true }")
+    
+    # Check if the response contains success status
+    if echo "$response" | grep -q '"status":"success"'; then
         echo "✓ Successfully initiated pull for '$model'"
         ((success_count++))
     else
         echo "✗ Failed to pull '$model'"
+        echo "Response: $response"
         ((fail_count++))
     fi
     
