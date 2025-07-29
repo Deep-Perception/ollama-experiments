@@ -27,12 +27,6 @@ else
     mapfile -t models <<< "$models_string"
 fi
 
-# Debug: Show what we parsed
-echo "Debug - Raw models array:"
-for i in "${!models[@]}"; do
-    echo "  [$i] = '${models[$i]}'"
-done
-
 # Remove any empty elements
 filtered_models=()
 for model in "${models[@]}"; do
@@ -50,18 +44,40 @@ if [ ${#models[@]} -eq 0 ]; then
 fi
 
 echo "Found ${#models[@]} models:"
-for model in "${models[@]}"; do
-    echo "  - '$model'"
+for i in "${!models[@]}"; do
+    echo "  $((i+1)). ${models[$i]}"
 done
+echo "  $((${#models[@]}+1)). All models"
 echo ""
 
-# Pull each model
+# Prompt user for selection
+while true; do
+    read -p "Which model(s) would you like to pull? (1-$((${#models[@]}+1))): " choice
+    
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $((${#models[@]}+1)) ]; then
+        break
+    else
+        echo "Invalid selection. Please enter a number between 1 and $((${#models[@]}+1))."
+    fi
+done
+
+# Determine which models to pull
+if [ "$choice" -eq $((${#models[@]}+1)) ]; then
+    models_to_pull=("${models[@]}")
+    echo "Selected: All models"
+else
+    models_to_pull=("${models[$((choice-1))]}")
+    echo "Selected: ${models[$((choice-1))]}"
+fi
+echo ""
+
+# Pull selected model(s)
 success_count=0
 fail_count=0
 
-for i in "${!models[@]}"; do
-    model="${models[$i]}"
-    echo "Pulling model [$((i+1))/${#models[@]}]: '$model'"
+for i in "${!models_to_pull[@]}"; do
+    model="${models_to_pull[$i]}"
+    echo "Pulling model [$((i+1))/${#models_to_pull[@]}]: '$model'"
     
     # Capture the response and check it
     response=$(curl --silent http://localhost:8000/api/pull \
